@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link href="/static/bootstrap-5.0.2-dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+
+    <title>Login</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  </head>
+  <body>
+
+    <div class="container">
+        <!-- Content here -->
+        
+
+        <div id="app">
+            <form class="needs-validation" @submit.prevent="submit">
+                <div class="row justify-content-center">
+                    <div class="mb-3 col-6">
+                        <h1>Login</h1>
+                    </div>
+                </div> 
+                <div class="mb-3 row justify-content-center">
+                    <div class="col-6">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" :class="(failedLogin)?'is-invalid':''" id="username" v-model="username" required>
+                        <div class="invalid-feedback">
+                          Login failed.
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3 row justify-content-center">
+                    <div class="col-6">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" v-model="password">
+                    </div>
+                </div>
+                <div class="mb-3 row justify-content-center">
+                    <div class="col-6">
+                        <input type="submit" class="btn btn-primary" value="Login">
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+      
+    
+
+    <script>
+    const { createApp } = Vue
+
+    createApp({
+        data() {
+            return {
+                failedLogin: false,
+                username: '',
+                password: ''
+            }
+        },
+        methods: {
+            submit() {
+                let self = this;
+
+                axios.post('/login',{
+                    username: this.username,
+                    password: this.password
+                })
+                .then(function (response) {
+                    console.log(response);
+                    window.location = "/admin"
+                })
+                .catch(function (error) {
+                    console.log(error);
+                    if(error.response.status == 401) {
+                        self.failedLogin = true
+                    }
+                });
+            }
+        },
+        mounted: function() {
+            document.getElementById("username").focus();
+            
+        }
+    }).mount('#app')
+    </script>
+
+    <!-- Option 1: Bootstrap Bundle with Popper -->
+    <script src="/static/bootstrap-5.0.2-dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+
+  </body>
+</html>
+

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <!-- Required meta tags -->
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <!-- Bootstrap CSS -->
+        <link href="/static/bootstrap-5.0.2-dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+
+        <title>Admin</title>
+        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+        <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Admin</h1>
+            <div>
+                Logged in as x
+            </div>
+            <div id="app">
+                <textarea id="input" v-model="input" class="form-control"></textarea>
+                <button @click="btnRunCommandClick" class="form-control">Run command</button>
+                <textarea id="output" v-model="output" class="form-control"></textarea>
+
+                <div id="photos">
+                    <h2>Photo Settings</h2>
+                    <p>
+                        Folders with photos. It will look for photos in these folders, and index these
+                        photos in its database. Local folders can be watched for changes. Remote (e.g. UNC)
+                        folders may need manual refreshing.
+                    </p>                    
+
+                    <input type="text" v-model="newPhotoFolder" class="form-control">
+                    <button @click="btnAddPhotoFolderClick" class="form-control">Add folder</button>
+
+
+                </div>
+
+                <div>
+                    <h2>Pairing</h2>
+                    <h3>Pair with a friend</h3>
+                    <p>
+                        Your friend must have opened his/her node for pairing.
+                    </p>
+                    <div>
+                        URL: <input type="text" class="form-control" v-model="pairURL">
+                    </div>
+                    <div>
+                        Key: <input type="text" class="form-control" v-model="pairKey">
+                    </div>
+                    <button @click="btnPair">Pair</button>
+
+                    <h3>Open this node for pairing</h3>
+                    
+                    <div>Your friend's Jepeto URL <input type="text" v-model="friendURL" class="form-control"></div>
+                    <div>
+                        Valid for
+                        <input type="radio" value="1 hour"> 1hr
+                    </div>
+                    <button @click="btnCreatePairingOpening" class="form-control">Create pairing opening</button>
+                    <div>Ask your friend to request using the code 'marco'</div>
+
+                    <table>
+                        <tr>
+                            <th>For</th><th>Code</th>
+                            <tr v-for="pairingRequest in pairingRequests">
+                                <td>{{pairingRequest.for}}</td><td>{{pairingRequest.code}}</td>
+                            </tr>
+                        </tr>
+                    </table>
+
+                    <h2>Established Pairings</h2>
+                    <table>
+                        <tr>
+                            <th>With</th><th>Age</th>
+                            <tr v-for="pairing in pairings">
+                                <td>{{pairing.with}}</td><td>{{pairing.age}}</td>
+                            </tr>
+                        </tr>
+                    </table>
+
+                    <h2>SQL</h2>
+                    <div>
+                        <textarea v-model="sql" class="form-control"></textarea>
+                    </div>
+                    <div>
+                        <button @click="btnRunSql" class="form-control">Run</button>
+                    </div>
+                    <div>
+                        <table class="table">
+                            <tr>
+                                <div v-if="sqlResult.rows.length>0"><th v-for="(value,key) in sqlResult.rows[0]">{{key}}</th></div>
+                            </tr>
+                            <tr v-for="row in sqlResult.rows">
+                                <td v-for="(value,key) in row">{{key}}={{value}}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <script>
+                const { createApp } = Vue
+            
+                createApp({
+                    data() {
+                        return {
+                            input: '',
+                            output: '',
+                            friendURL: 'http://localhost:2222',
+                            pairings: [{"with":"Nick","age":"20 minutes"},{"with":"August47","age":"4 years"}],
+                            pairingRequests: [],
+                            sql: 'SELECT * FROM pair_request_opening',
+                            sqlResult: {rows:[]},
+                            newPhotoFolder: ''
+                        }
+                    },
+                    methods: {
+                        btnRunCommandClick() {
+                            let self = this;
+            
+                            axios.post('/command',{
+                                Command: this.input
+                            })
+                            .then(function (response) {
+                                self.output = response.data + "\n" + self.output;
+                            })
+                            .catch(function (error) {
+                                console.log(error);
+                                if(error.response.status == 401) {
+                                    self.failedLogin = true
+                                }
+                            });
+                        },
+                        btnCreatePairingOpening() {
+                            let self = this;
+
+                            axios.post('/api/pairing-request-opening',{
+                                url: self.friendURL
+                            })
+                            .then(function (response) {
+                                self.output = response.data + "\n" + self.output;
+                            })
+                            .catch(function (error) {
+                                console.log(error);
+                            });
+                        },
+                        btnRunSql() {
+                            let self = this;
+                            axios.post('/sql',{
+                                sql: this.sql
+                            })
+                            .then(function (response) {
+                                self.sqlResult = response.data
+                            })
+                            .catch(function (error) {
+                                console.log(error);
+                            });
+                        },
+                        btnPair() {
+                            let self = this;
+                            axios.post('/start-pairing',{
+                                source_url: window.location.hostname,
+                                dest_url: this.pairURL,
+                                key: this.pairKey
+                            })
+                            .then(function (response) {
+                                self.sqlResult = response.data
+                            })
+                            .catch(function (error) {
+                                console.log(error);
+                            });
+                        },
+                        refreshSession() {
+                            axios.post("/refresh")
+                        },
+                        btnAddPhotoFolderClick() {
+                            let self = this;
+                            axios.post('/photos/folders',{
+                                folder: this.newPhotoFolder
+                            })
+                            .then(function(response) {
+                                
+                            })
+                            .catch(function(error){
+                                console.log(error);
+                            })
+                        }
+                    },
+                    mounted: function() {
+                        document.getElementById("input").focus();
+                        var self = this;
+                        setInterval(function () { self.refreshSession() } , 10000)
+                    }
+                }).mount('#app')
+                </script>
+        </div> <!-- container -->
+    </body>
+</html>
