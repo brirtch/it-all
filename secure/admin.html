@@ -93,7 +93,7 @@
                                 <div v-if="sqlResult.rows.length>0"><th v-for="(value,key) in sqlResult.rows[0]">{{key}}</th></div>
                             </tr>
                             <tr v-for="row in sqlResult.rows">
-                                <td v-for="(value,key) in row">{{key}}={{value}}</td>
+                                <td v-for="(value,key) in row">{{value}}</td>
                             </tr>
                         </table>
                     </div>

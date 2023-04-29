@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link href="/static/bootstrap-5.0.2-dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+
+    <title>Game</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  </head>
+  <body>
+
+    <div class="container">
+        <!-- Content here -->
+        
+
+        <div id="app">
+           
+            <button @click="getGameStatus">Get game status</button>
+            Player Name: <input type="text" v-model="playerName">
+            <input type="button" value="Create Game" @click="btnCreateGame">
+            <div>
+                Active Game ID: {{activeGameID}} Player ID: {{activePlayerID}}    
+            </div>            
+
+            <div>
+                <div v-for="game in gameList">
+                    {{game.gameName}} ({{game.hostPlayerName}}) <a href="#" @click="joinGame(game.gameID)">Join</a>
+                </div>
+            </div>
+
+            <div>
+                Wood: {{player.wood}} Food: {{player.food}}
+                <table>
+                    <tr v-for="person in peopleList">
+                        <td>{{person.gender}} {{person.role}}</td>
+                    </tr>
+                </table>
+
+                <h3>Other Players</h3>
+                <ul>
+                    <li v-for="otherPlayer in otherPlayers">{{otherPlayer}}</li>
+                </ul>
+            </div>
+
+            <h1>Map</h1>
+            <div style="position:relative;width:500px;height:500px;border:1px solid black">
+                <div v-for="gameObject in gameObjects" v-bind:style="{position:'absolute',backgroundColor:'green',left:gameObject.x*5+'px',top:gameObject.y*5+'px',width:'5px',height:'5px'}">
+                </div>
+                <div v-for="person in people" v-bind:style="{position:'absolute',backgroundColor:'blue',left:person.x*5+'px',top:person.y*5+'px',width:'5px',height:'5px'}">
+                </div>
+            </div>
+        </div>
+    </div>
+      
+    
+
+    <script>
+    const { createApp } = Vue
+
+    createApp({
+        data() {
+            return {
+                playerName: "",
+                activeGameID: -1,
+                activePlayerID: -1,
+                openGames: [],
+                player: {},
+                people: [],
+                otherPlayers: [],
+                gameObjects: []
+            }
+        },
+        methods: {
+            
+            btnCreateGame() {
+                let self = this;
+
+                axios.post('/game/create',{
+                    playerName: this.playerName
+                })
+                .then(function (response) {
+                    console.log(response);
+
+                    self.joinGame(response.data.gameID)
+                    axios.get('/game/games')
+                    .then(function(response) {
+                        console.log(response)
+                        self.openGames = response.data.games
+                    })
+                })
+                .catch(function (error) {
+                    console.log(error);
+                });
+            },
+            joinGame(gameId) {
+                let self = this;
+
+                axios.post('/game/join',{
+                    playerName: this.playerName,
+                    gameId: gameId
+                })
+                .then(function(response) {
+                    self.activeGameID = gameId
+                    self.activePlayerID = response.data.playerID;
+                })
+            },
+            getGameStatus() {
+                let self = this;
+
+                axios.get('/game/' + this.activeGameID + '/' + this.activePlayerID + '/status')
+                .then(function(response){
+                    self.player = response.data.player
+                    self.people = response.data.people
+                    self.otherPlayers = response.data.otherPlayers
+                    self.gameObjects = response.data.gameObjects
+                })
+            }
+        },
+        computed: {
+            gameList() {
+                return this.openGames;
+            },
+            peopleList() {
+                return this.people;
+            }
+        },
+        mounted: function() {
+            let self = this;
+
+            axios.get('/game/games')
+            .then(function(response) {
+                console.log(response)
+                self.openGames = response.data.games
+            })
+
+            window.setInterval(() => {this.getGameStatus();},1000)
+        }
+    }).mount('#app')
+    </script>
+
+    <!-- Option 1: Bootstrap Bundle with Popper -->
+    <script src="/static/bootstrap-5.0.2-dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+
+  </body>
+</html>
+

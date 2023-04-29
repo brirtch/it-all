@@ -20,7 +20,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var db *sql.DB
+var DB *sql.DB
+var gameServer GameServer
 
 var users = map[string]string{
 	"user1": "password1",
@@ -132,7 +133,7 @@ func rowsToJSON(rows *sql.Rows) ([]byte, error) {
 func AddPhotoFolder(folder string) {
 	sql := `INSERT INTO photo_folder(folder, date_added, date_last_scanned, photo_count, state) VALUES (?,CURRENT_TIMESTAMP,NULL,NULL, 'PENDING_SCAN');`
 	//sql = strings.Replace(sql, "?", "'"+folder+"'", -1)
-	db.Exec(sql, folder)
+	DB.Exec(sql, folder)
 	/*preState, err := db.Prepare(sql)
 	if err != nil {
 		log.Fatal(err)
@@ -159,7 +160,7 @@ func PostSql(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("This would run SQL: " + sql.Sql)
 
-	rows, err := db.Query(sql.Sql)
+	rows, err := DB.Query(sql.Sql)
 	defer rows.Close()
 	message := ""
 	rowJSON := ""
@@ -210,29 +211,6 @@ func Admin(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// GET /photos
-func PhotosHandler(w http.ResponseWriter, r *http.Request) {
-	sql := `SELECT full_path,filename,bytes,date_taken FROM photo ORDER BY date_taken DESC`
-	rows, err := db.Query(sql)
-	if err != nil {
-		log.Println(err)
-	}
-
-	fullPath := ""
-	filename := ""
-	bytes := 0
-	dateTaken := time.Now()
-	for rows.Next() {
-		err := rows.Scan(&fullPath, &filename, &bytes, &dateTaken)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		urlPath := "file://" + strings.Replace(fullPath, string(os.PathSeparator), "/", -1)
-		w.Write([]byte(fmt.Sprintf("<a href=\"%s\"><img src=\"%s\" width=332 height=332>%s (%d bytes)</a>", urlPath, urlPath, filename, bytes)))
-	}
-}
-
 func postCommand(w http.ResponseWriter, r *http.Request) {
 	var cmd Command
 	// Get the JSON body and decode into credentials
@@ -263,34 +241,29 @@ func postCommand(w http.ResponseWriter, r *http.Request) {
 func dbInit() {
 	fmt.Println("Initiating database...")
 	var err error
-	db, err = sql.Open("sqlite3", "./db.db")
+	DB, err = sql.Open("sqlite3", "./db.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	//defer db.Close()
 
-	sqlStmt := `
-	CREATE TABLE pair_request_opening (url text, created, expires, key);
-	`
-	_, err = db.Exec(sqlStmt)
-	if err != nil {
-		log.Printf("%q: %s\n", err, sqlStmt)
-		return
+	var sqlStatements []string
+	sqlStatements = append(sqlStatements, `CREATE TABLE pair_request_opening (url text, created, expires, key);`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE photo_folder(folder TEXT, date_added DATETIME, date_last_scanned DATETIME, photo_count INT, state TEXT);`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE photo(photo_id INTEGER PRIMARY KEY,full_path TEXT,filename TEXT,bytes INT,parent_folder TEXT,date_taken DATETIME)`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE game(game_id INTEGER PRIMARY KEY, game_name TEXT,map_width INT,map_height INT)`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE player(player_id INTEGER PRIMARY KEY,player_name,game_id INT REFERENCES game(game_id),food INT,wood INT)`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE person(person_id INTEGER PRIMARY KEY,player_id INT REFERENCES player(player_id),role TEXT,gender TEXT,health INT)`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE map_object(map_object_id INTEGER PRIMARY KEY,game_id INT REFERENCES game(game_id),x INT,y INT,type TEXT,health INT)`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE player_map(player_map_id INTEGER PRIMARY KEY,player_id INT REFERENCES player(player_id),x INT,y INT,type TEXT)`)
+	for _, sqlStatement := range sqlStatements {
+		_, err = DB.Exec(sqlStatement)
+		if err != nil {
+			log.Printf("%q: %s\n", err, sqlStatement)
+			return
+		}
 	}
 
-	sqlStmt = `CREATE TABLE photo_folder(folder TEXT, date_added DATETIME, date_last_scanned DATETIME, photo_count INT, state TEXT);`
-	_, err = db.Exec(sqlStmt)
-	if err != nil {
-		log.Printf("%q: %s\n", err, sqlStmt)
-		return
-	}
-
-	sqlStmt = `CREATE TABLE photo(full_path TEXT,filename TEXT,bytes INT,parent_folder TEXT,date_taken DATETIME)`
-	_, err = db.Exec(sqlStmt)
-	if err != nil {
-		log.Printf("%q: %s\n", err, sqlStmt)
-		return
-	}
 }
 
 func main() {
@@ -308,6 +281,8 @@ func main() {
 
 	dbInit()
 
+	gameServer := NewGameServer()
+	go gameServer.Run()
 	go PhotoWatch()
 
 	// If the data folder doesn't exist, create it.
@@ -328,7 +303,10 @@ func main() {
 	r.Post("/pair", pair)
 	r.Post("/api/pairing-request-opening", PairRequestOpenings)
 
-	r.Get("/photos", PhotosHandler)
+	r.Route("/photos", func(r chi.Router) {
+		r.Get("/", PhotosHandler)
+		r.Get("/{photoID}", ImageServeHandler)
+	})
 
 	r.Route("/admin", func(r chi.Router) {
 		r.Use(authenticatedPageMiddleware)
@@ -339,6 +317,12 @@ func main() {
 		r.Use(authenticateMiddleware)
 		r.Post("/", PostSql)
 	})
+
+	/* Game routes */
+	r.Post("/game/create", gameServer.CreateGameHandler)
+	r.Post("/game/join", gameServer.JoinGameHandler)
+	r.Get("/game/games", gameServer.GetGamesHandler)
+	r.Get("/game/{gameID}/{playerID}/status", gameServer.GetGameStatusHandler)
 
 	r.Post("/refresh", Refresh)
 	fs := http.FileServer(http.Dir("static"))
@@ -353,5 +337,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	db.Close()
+	DB.Close()
 }

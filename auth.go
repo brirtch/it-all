@@ -267,7 +267,7 @@ func pair(w http.ResponseWriter, r *http.Request) {
 	// Print the details of the pairing request to the console.
 	fmt.Println("PAIRING REQUEST FROM " + pairRequest.SourceURL + " with key " + pairRequest.Key)
 
-	tx, err := db.Begin()
+	tx, err := DB.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func PairRequestOpenings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store in the table.
-	tx, err := db.Begin()
+	tx, err := DB.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
