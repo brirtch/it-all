@@ -23,11 +23,7 @@ type GameServer struct {
 
 type CreateGameRequest struct {
 	PlayerName string `json:"playerName"`
-	ReplyChan  chan CreateGameResponse
-}
-
-type CreateGameResponse struct {
-	GameID string `json:"gameID"`
+	ReplyChan  chan GameListItemResponse
 }
 
 type GetGamesRequest struct {
@@ -93,7 +89,7 @@ func (server *GameServer) Run() {
 		case createGameRequest := <-server.createGameCommandChannel:
 			g := NewGame(createGameRequest.PlayerName)
 			server.Games = append(server.Games, g)
-			createGameResponse := CreateGameResponse{GameID: g.GameID}
+			createGameResponse := GameListItemResponse{GameID: g.GameID, GameName: g.GameName, HostPlayerName: g.HostPlayerName}
 			createGameRequest.ReplyChan <- createGameResponse
 
 		case joinGameRequest := <-server.joinGameCommandChannel:
@@ -176,7 +172,7 @@ func (server *GameServer) CreateGameHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	createGameRequest.ReplyChan = make(chan CreateGameResponse)
+	createGameRequest.ReplyChan = make(chan GameListItemResponse)
 	server.createGameCommandChannel <- createGameRequest
 	createGameResponse := <-createGameRequest.ReplyChan
 

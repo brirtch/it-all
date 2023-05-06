@@ -78,24 +78,12 @@
         methods: {
             
             btnCreateGame() {
-                let self = this;
-
-                axios.post('/game/create',{
-                    playerName: this.playerName
-                })
-                .then(function (response) {
-                    console.log(response);
-
-                    self.joinGame(response.data.gameID)
-                    axios.get('/game/games')
-                    .then(function(response) {
-                        console.log(response)
-                        self.openGames = response.data.games
+                axios
+                    .post('/game/create',{
+                        playerName: this.playerName
                     })
-                })
-                .catch(function (error) {
-                    console.log(error);
-                });
+                    .then(response => { this.openGames.push(response.data); })
+                    .catch(error => { console.log(error); });
             },
             joinGame(gameId) {
                 let self = this;
@@ -105,9 +93,10 @@
                     gameId: gameId
                 })
                 .then(function(response) {
-                    self.activeGameID = gameId
+                    self.activeGameID = gameId;
                     self.activePlayerID = response.data.playerID;
-                })
+                    window.setInterval(() => {self.getGameStatus();},1000)
+                });
             },
             getGameStatus() {
                 let self = this;
@@ -118,7 +107,7 @@
                     self.people = response.data.people
                     self.otherPlayers = response.data.otherPlayers
                     self.gameObjects = response.data.gameObjects
-                })
+                });
             }
         },
         computed: {
@@ -138,7 +127,7 @@
                 self.openGames = response.data.games
             })
 
-            window.setInterval(() => {this.getGameStatus();},1000)
+            
         }
     }).mount('#app')
     </script>
