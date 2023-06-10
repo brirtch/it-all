@@ -29,7 +29,7 @@
 
             <div>
                 <div v-for="game in gameList">
-                    {{game.gameName}} ({{game.hostPlayerName}}) <a href="#" @click="joinGame(game.gameID)">Join</a>
+                    {{game.gameName}} ({{game.hostPlayerName}}) - {{game.gameID}} <a href="#" @click="joinGame(game.gameID)">Join</a>
                 </div>
             </div>
 
@@ -49,7 +49,7 @@
 
             <h1>Map</h1>
             <div style="position:relative;width:500px;height:500px;border:1px solid black">
-                <div v-for="gameObject in gameObjects" v-bind:style="{position:'absolute',backgroundColor:'green',left:gameObject.x*5+'px',top:gameObject.y*5+'px',width:'5px',height:'5px'}">
+                <div v-for="gameObject in gameObjects" v-bind:style="{position:'absolute',backgroundColor:getTileColor(gameObject.type),left:gameObject.x*5+'px',top:gameObject.y*5+'px',width:'5px',height:'5px'}">
                 </div>
                 <div v-for="person in people" v-bind:style="{position:'absolute',backgroundColor:'blue',left:person.x*5+'px',top:person.y*5+'px',width:'5px',height:'5px'}">
                 </div>
@@ -63,52 +63,71 @@
     const { createApp } = Vue
 
     createApp({
-        data() {
-            return {
-                playerName: "",
-                activeGameID: -1,
-                activePlayerID: -1,
-                openGames: [],
-                player: {},
-                people: [],
-                otherPlayers: [],
-                gameObjects: []
-            }
-        },
-        methods: {
-            
-            btnCreateGame() {
+        setup() {
+            const playerName = Vue.ref("");
+            const activeGameID = Vue.ref(-1);
+            const activePlayerID = Vue.ref(-1);
+            const openGames = Vue.ref([]);
+            const player = Vue.ref({});
+            const people = Vue.ref([]);
+            const otherPlayers = Vue.ref([]);
+            const gameObjects = Vue.ref([]);
+        
+
+            function btnCreateGame() {
                 axios
                     .post('/game/create',{
-                        playerName: this.playerName
+                        playerName: playerName.value
                     })
-                    .then(response => { this.openGames.push(response.data); })
+                    .then(response => { openGames.value.push(response.data); })
                     .catch(error => { console.log(error); });
-            },
-            joinGame(gameId) {
-                let self = this;
+            }
 
+            function joinGame(gameId) {
                 axios.post('/game/join',{
-                    playerName: this.playerName,
+                    playerName: playerName.value,
                     gameId: gameId
                 })
                 .then(function(response) {
-                    self.activeGameID = gameId;
-                    self.activePlayerID = response.data.playerID;
-                    window.setInterval(() => {self.getGameStatus();},1000)
-                });
-            },
-            getGameStatus() {
-                let self = this;
-
-                axios.get('/game/' + this.activeGameID + '/' + this.activePlayerID + '/status')
-                .then(function(response){
-                    self.player = response.data.player
-                    self.people = response.data.people
-                    self.otherPlayers = response.data.otherPlayers
-                    self.gameObjects = response.data.gameObjects
+                    activeGameID.value = gameId;
+                    activePlayerID.value = response.data.playerID;
+                    window.setInterval(() => {getGameStatus();},1000)
                 });
             }
+            
+            function getGameStatus() {
+                let self = this;
+
+                axios.get('/game/' + activeGameID.value + '/' + activePlayerID.value + '/status')
+                .then(function(response){
+                    player.value = response.data.player
+                    people.value = response.data.people
+                    otherPlayers.value = response.data.otherPlayers
+                    gameObjects.value = response.data.gameObjects
+                });
+            }
+
+            function getTileColor(tileChar) {
+                if(tileChar == "T") return "green"
+                if(tileChar == "S") return "gray"
+                if(tileChar == "B") return "red" // berry
+                return "white"
+            }
+
+            return {
+                playerName,
+                activeGameID,
+                activePlayerID,
+                openGames,
+                player,
+                people,
+                otherPlayers,
+                gameObjects,
+                btnCreateGame,
+                joinGame,
+                getGameStatus,
+                getTileColor
+            };
         },
         computed: {
             gameList() {
@@ -117,6 +136,7 @@
             peopleList() {
                 return this.people;
             }
+            
         },
         mounted: function() {
             let self = this;
@@ -124,7 +144,10 @@
             axios.get('/game/games')
             .then(function(response) {
                 console.log(response)
-                self.openGames = response.data.games
+                if (response.data.games !== null) {
+                    self.openGames.value = response.data.games
+                }
+                
             })
 
             

@@ -1,3 +1,5 @@
+github.com/beefsack/go-astar v0.0.0-20200827232313-4ecf9e304482 h1:p4g4uok3+r6Tg6fxXEQUAcMAX/WdK6WhkQW9s0jaT7k=
+github.com/beefsack/go-astar v0.0.0-20200827232313-4ecf9e304482/go.mod h1:Cu3t5VeqE8kXjUBeNXWQprfuaP5UCIc5ggGjgMx9KFc=
 github.com/go-chi/chi v1.5.4 h1:QHdzF2szwjqVV4wmByUnTcsbIg7UGaQ0tPF2t5GcAIs=
 github.com/go-chi/chi v1.5.4/go.mod h1:uaf8YgoFazUOkPBG7fxPftUylNumIev9awIWOENIuEg=
 github.com/go-chi/chi/v5 v5.0.8 h1:lD+NLqFcAi1ovnVZpsnObHGW4xb4J8lNmoYVfECH1Y0=

@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/beefsack/go-astar v0.0.0-20200827232313-4ecf9e304482 // indirect
 	github.com/go-chi/chi v1.5.4 // indirect
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	golang.org/x/image v0.7.0 // indirect

@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ type GameServer struct {
 	joinGameCommandChannel   chan JoinGameRequest
 	getGamesRequestChannel   chan GetGamesRequest
 	getGameStatusChannel     chan GetGameStatusRequest
+	buyRequestChannel        chan BuyRequest
 }
 
 type CreateGameRequest struct {
@@ -38,6 +40,16 @@ type JoinGameRequest struct {
 
 type JoinGameResponse struct {
 	PlayerID string `json:"playerID"`
+}
+
+type BuyRequest struct {
+	ItemName  string `json:"itemName"`
+	Quantity  int    `json:"quantity"`
+	ReplyChan chan BuyResponse
+}
+
+type BuyResponse struct {
+	Success bool `json:"success"`
 }
 
 type GameListItemResponse struct {
@@ -72,6 +84,7 @@ func NewGameServer() *GameServer {
 	server.joinGameCommandChannel = make(chan JoinGameRequest)
 	server.getGamesRequestChannel = make(chan GetGamesRequest)
 	server.getGameStatusChannel = make(chan GetGameStatusRequest)
+	server.buyRequestChannel = make(chan BuyRequest)
 
 	return server
 }
@@ -125,13 +138,17 @@ func (server *GameServer) Run() {
 					playerNames = append(playerNames, player.Name)
 				}
 
-				gameStatusResponse = GameStatusResponse{Player: thisPlayer, OtherPlayers: playerNames, People: thisPlayer.People, GameObjects: g.GameObjects}
+				gameStatusResponse = GameStatusResponse{Player: thisPlayer, OtherPlayers: playerNames, People: thisPlayer.People, GameObjects: g.Map.GetNonBlankTiles()}
 			} else {
 				gameStatusResponse = GameStatusResponse{Player: nil, OtherPlayers: nil, People: nil, GameObjects: nil}
 
 			}
 			getGameStatusRequest.ReplyChan <- gameStatusResponse
-
+		case buyRequest := <-server.buyRequestChannel:
+			// Purchase item.
+			//player.Buy(buyRequest.ItemName, buyRequest.Quantity)
+			buyResponse := BuyResponse{Success: true}
+			buyRequest.ReplyChan <- buyResponse
 		default: // do nothing
 		}
 
@@ -216,6 +233,22 @@ func (server *GameServer) GetGameStatusHandler(w http.ResponseWriter, r *http.Re
 	getGameStatusRequest := GetGameStatusRequest{GameID: gameID, PlayerID: playerID, ReplyChan: make(chan GameStatusResponse)}
 	server.getGameStatusChannel <- getGameStatusRequest
 	gameStatusResponse := <-getGameStatusRequest.ReplyChan
-	responseJSON, _ := json.Marshal(gameStatusResponse)
+
+	responseJSON, err := json.Marshal(gameStatusResponse)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(responseJSON))
 	w.Write(responseJSON)
+}
+
+func (server *GameServer) BuyHandler(w http.ResponseWriter, r *http.Request) {
+	var buyRequest BuyRequest
+	err := json.NewDecoder(r.Body).Decode(&buyRequest)
+	if err != nil {
+		// If the structure of the body is wrong, return an HTTP error
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Println(err)
+		return
+	}
 }

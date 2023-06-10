@@ -97,6 +97,16 @@
                             </tr>
                         </table>
                     </div>
+
+                    <h2>Photo Folders</h2>
+                    <table class="table">
+                        <tr>
+                            <div v-if="photoFolders.rows.length>0"><th v-for="(value,key) in photoFolders.rows[0]">{{key}}</th></div>
+                        </tr>
+                        <tr v-for="row in photoFolders.rows">
+                            <td v-for="(value,key) in row">{{value}}</td>
+                        </tr>
+                    </table>
                 </div>
             </div>
             <script>
@@ -112,7 +122,8 @@
                             pairingRequests: [],
                             sql: 'SELECT * FROM pair_request_opening',
                             sqlResult: {rows:[]},
-                            newPhotoFolder: ''
+                            newPhotoFolder: '',
+                            photoFolders: {rows:[]}
                         }
                     },
                     methods: {
@@ -191,6 +202,18 @@
                         document.getElementById("input").focus();
                         var self = this;
                         setInterval(function () { self.refreshSession() } , 10000)
+
+                        // Get watched photo folders.
+                        sql = "SELECT * FROM photo_folder";
+                        axios.post('/sql',{
+                                sql: sql
+                            })
+                            .then(function (response) {
+                                self.photoFolders = response.data
+                            })
+                            .catch(function (error) {
+                                console.log(error);
+                            });
                     }
                 }).mount('#app')
                 </script>

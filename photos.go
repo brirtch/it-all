@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -16,6 +17,10 @@ import (
 	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/draw"
 )
+
+type PhotoFolderRequest struct {
+	Folder string `json:folder`
+}
 
 // Creates a thumbnail of sourceFile (JPG only at the moment)
 // and returns the thumbnail path.
@@ -165,6 +170,34 @@ func ImageServeHandler(w http.ResponseWriter, r *http.Request) {
 	fullPath := ""
 	_ = row.Scan(&fullPath)
 	http.ServeFile(w, r, fullPath)
+}
+
+// POST /photos/folder
+func NewPhotoFolderHandler(w http.ResponseWriter, r *http.Request) {
+	var photoFolderRequest PhotoFolderRequest
+	err := json.NewDecoder(r.Body).Decode(&photoFolderRequest)
+	if err != nil {
+		// If the structure of the body is wrong, return an HTTP error
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Println(err)
+		return
+	}
+	AddPhotoFolder(photoFolderRequest.Folder)
+}
+
+func AddPhotoFolder(folder string) {
+	sql := `INSERT INTO photo_folder(folder, date_added, date_last_scanned, photo_count, state) VALUES (?,CURRENT_TIMESTAMP,NULL,NULL, 'PENDING_SCAN');`
+	//sql = strings.Replace(sql, "?", "'"+folder+"'", -1)
+	DB.Exec(sql, folder)
+	/*preState, err := db.Prepare(sql)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer preState.Close()
+	_, err = preState.Query(folder)
+	if err != nil {
+		log.Fatal(err)
+	}*/
 }
 
 // GET /photos

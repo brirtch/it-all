@@ -130,21 +130,6 @@ func rowsToJSON(rows *sql.Rows) ([]byte, error) {
 	return z, err
 }
 
-func AddPhotoFolder(folder string) {
-	sql := `INSERT INTO photo_folder(folder, date_added, date_last_scanned, photo_count, state) VALUES (?,CURRENT_TIMESTAMP,NULL,NULL, 'PENDING_SCAN');`
-	//sql = strings.Replace(sql, "?", "'"+folder+"'", -1)
-	DB.Exec(sql, folder)
-	/*preState, err := db.Prepare(sql)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer preState.Close()
-	_, err = preState.Query(folder)
-	if err != nil {
-		log.Fatal(err)
-	}*/
-}
-
 // POST /sql
 func PostSql(w http.ResponseWriter, r *http.Request) {
 	// Get Sql.
@@ -306,6 +291,7 @@ func main() {
 	r.Route("/photos", func(r chi.Router) {
 		r.Get("/", PhotosHandler)
 		r.Get("/{photoID}", ImageServeHandler)
+		r.Post("/folders", NewPhotoFolderHandler)
 	})
 
 	r.Route("/admin", func(r chi.Router) {
