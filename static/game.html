@@ -1,16 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
   <head>
     <!-- Required meta tags -->
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <!-- Bootstrap CSS -->
-    <link href="/static/bootstrap-5.0.2-dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <link href="/static/bootstrap-5.3.0-dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
 
     <title>Game</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="lodash.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik+Iso&display=swap&family=Noto+Color+Emoji&family=Yatra+One" rel="stylesheet">
+    <style>
+        body {font-family:'Yatra One'}
+        #logo {font-size: 5rem; font-family: 'Yatra One', cursive;}
+    </style>
   </head>
   <body>
 
@@ -19,41 +27,119 @@
         
 
         <div id="app">
-           
-            <button @click="getGameStatus">Get game status</button>
-            Player Name: <input type="text" v-model="playerName">
-            <input type="button" value="Create Game" @click="btnCreateGame">
-            <div>
-                Active Game ID: {{activeGameID}} Player ID: {{activePlayerID}}    
-            </div>            
+            <div v-if="mode != 'game'">
+                <div id="logo">Hunger for Victory</div>
+                <div style="font-family:'Yatra One'">A real time strategy game with a focus on strategy</div>
+            </div>
+            <div id="welcome_screen" v-if="mode == 'welcome_screen'">
+                
+                
+                <div><button type="button" class="btn btn-secondary" @click="mode = 'new_game'">New Game</button></div>
+                <div><button type="button" class="btn btn-secondary" @click="mode = 'join_game'">Join Game</button></div>
+            </div>
 
-            <div>
+            <div id="new_game" v-if="mode == 'new_game'">
+                <h1>Create New Game</h1>
+                Player Name: <input type="text" v-model="playerName">
+                <input type="button" value="Create Game" @click="btnCreateGame" class="btn btn-secondary"> 
+                <button @click="mode = 'welcome_screen'">Back to Main Menu</button>
+            </div>
+
+            <div id="join_game" v-if="mode == 'join_game'">
+                <h1>Join Game</h1>
+                Player Name: <input type="text" v-model="playerName">
+                <h1>Active games on this Server</h1>
                 <div v-for="game in gameList">
-                    {{game.gameName}} ({{game.hostPlayerName}}) - {{game.gameID}} <a href="#" @click="joinGame(game.gameID)">Join</a>
+                    {{game.gameName}} ({{game.hostPlayerName}}) <button @click="joinGame(game.gameID)" class="btn btn-secondary">Join</button>
+                </div>
+                <button @click="mode = 'welcome_screen'">Back to Main Menu</button>
+            </div>
+           
+
+            <div id="game" v-if="mode == 'game'">
+                <div>
+                    <div class="row">
+                        <div class="col-4">{{playerName}}</div>
+                        <div class="col-8" style="text-align:right"> &nbsp;🥩 {{player.food}} <span style="font-family:'Noto Color Emoji'">🪵</span> {{player.wood}}&nbsp; 🥈 {{player.iron}}&nbsp; 🎖️ {{player.gold}}</div> 
+                    </div>
+                </div>
+
+                <div class="modal" tabindex="-1" id="attackModal">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h1>Launch attack</h1>
+                            </div>
+                            <div class="modal-body">
+                                <div>Attack player: {{playerToAttack}}</div>
+                                Soliders to Commit: <input v-model="soldiersToCommit" type="number">
+                            </div>
+                            <div class="modal-footer">
+                                <button @click="attack()" data-bs-dismiss="modal">Attack!</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <div class="modal" tabindex="-1" id="messageModal">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h1>Send message to {{messageRecipientName}}</h1>
+                            </div>
+                            <div class="modal-body">
+                                Send message 
+                                <textarea v-model="messageBody"></textarea>
+                            </div>
+                            <div class="modal-footer">
+                                <button @click="sendMessage()" data-bs-dismiss="modal">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h2>Buildings</h2>
+                    <div v-for="building in buildings">
+                        {{building.type}} <span class="badge text-bg-secondary">{{building.quantity}}</span>
+                        <div v-for="gameObject in gameObjectLibrary">
+                            <div v-if="gameObject.buildAt == building.type">
+                                <a href="#" @click="buyItem(gameObject.type,1)">Buy {{gameObject.type}}</a> (<span v-if="gameObject.foodCost > 0">{{gameObject.foodCost}} 🥩</span><span v-if="gameObject.woodCost > 0">&nbsp;+{{gameObject.woodCost}} 🪵</span> <span v-if="gameObject.ironCost > 0"> {{gameObject.ironCost}} iron</span> <span v-if="gameObject.goldCost > 0">&nbsp;{{gameObject.goldCost}}</span>)
+                            </div>        
+                        </div>
+                        
+                    </div>
+
+                    <h2>People</h2>
+                    <div v-for="tally in gameObjectTallies">
+                        <div v-if="tally.category != 'BUILDING'">
+                            {{tally.type}} <span class="badge text-bg-secondary">{{tally.quantity}}</span>
+
+                            <div v-for="gameObject in gameObjectLibrary">
+                                <div v-if="gameObject.buildAt == tally.type">
+                                    <a href="#" @click="buyItem(gameObject.type,1)">Buy {{gameObject.type}}</a> (<span v-if="gameObject.foodCost > 0">{{gameObject.foodCost}} 🥩</span><span v-if="gameObject.woodCost > 0">&nbsp;+{{gameObject.woodCost}} 🪵</span> <span v-if="gameObject.ironCost > 0"> {{gameObject.ironCost}} iron</span> <span v-if="gameObject.goldCost > 0">&nbsp;{{gameObject.goldCost}}</span>)
+                                </div>        
+                            </div>
+                        </div>
+                    </div>
+                    
+
+                    <h3>Other Players</h3>
+                    <ul>
+                        <li v-for="otherPlayer in otherPlayers">{{otherPlayer.playerName}} <button @click="playerToAttack = otherPlayer.playerID" data-bs-toggle="modal" data-bs-target="#attackModal">Launch attack</button> 
+                             <button data-bs-toggle="modal" data-bs-target="#messageModal" @click="messageRecipientName = otherPlayer.playerName;messageRecipientID = otherPlayer.playerID">Message</button></li>
+                    </ul>
+                </div>
+
+                <h3>Message center</h3>
+                <div>
+                    <div v-for="message in player.messages">
+                        {{message}}
+                    </div>
                 </div>
             </div>
 
-            <div>
-                Wood: {{player.wood}} Food: {{player.food}}
-                <table>
-                    <tr v-for="person in peopleList">
-                        <td>{{person.gender}} {{person.role}}</td>
-                    </tr>
-                </table>
-
-                <h3>Other Players</h3>
-                <ul>
-                    <li v-for="otherPlayer in otherPlayers">{{otherPlayer}}</li>
-                </ul>
-            </div>
-
-            <h1>Map</h1>
-            <div style="position:relative;width:500px;height:500px;border:1px solid black">
-                <div v-for="gameObject in gameObjects" v-bind:style="{position:'absolute',backgroundColor:getTileColor(gameObject.type),left:gameObject.x*5+'px',top:gameObject.y*5+'px',width:'5px',height:'5px'}">
-                </div>
-                <div v-for="person in people" v-bind:style="{position:'absolute',backgroundColor:'blue',left:person.x*5+'px',top:person.y*5+'px',width:'5px',height:'5px'}">
-                </div>
-            </div>
         </div>
     </div>
       
@@ -68,10 +154,18 @@
             const activeGameID = Vue.ref(-1);
             const activePlayerID = Vue.ref(-1);
             const openGames = Vue.ref([]);
+            const gameObjectLibrary = Vue.ref([]);
             const player = Vue.ref({});
-            const people = Vue.ref([]);
-            const otherPlayers = Vue.ref([]);
             const gameObjects = Vue.ref([]);
+            const gameObjectTallies = Vue.ref([]);
+            const otherPlayers = Vue.ref([]);
+            const playerToAttack = Vue.ref("");
+            const soldiersToCommit = Vue.ref(1);
+            const launchAttackVisible = Vue.ref(false);
+            const messageRecipientID = Vue.ref("")
+            const messageRecipientName = Vue.ref("")
+            const messageBody = Vue.ref("")
+            const mode = Vue.ref("welcome_screen")
         
 
             function btnCreateGame() {
@@ -79,7 +173,7 @@
                     .post('/game/create',{
                         playerName: playerName.value
                     })
-                    .then(response => { openGames.value.push(response.data); })
+                    .then(response => { openGames.value.push(response.data); mode.value='join_game' })
                     .catch(error => { console.log(error); });
             }
 
@@ -91,19 +185,66 @@
                 .then(function(response) {
                     activeGameID.value = gameId;
                     activePlayerID.value = response.data.playerID;
+                    mode.value = 'game'
                     window.setInterval(() => {getGameStatus();},1000)
                 });
             }
+
+            function buyItem(item,qty) {
+                let self = this;
+
+                axios.post('/game/buy',{
+                    gameID: activeGameID.value,
+                    playerID: activePlayerID.value,
+                    itemName: item,
+                    quantity: qty
+                })
+                .then(function(response){
+                    var audio = new Audio('/static/game/sounds/select-sound-121244.mp3');
+                    audio.loop = false;
+                    audio.play();
+                    console.log('Buy done')                    
+                });
+            }
+
+            function sendMessage() {
+                let self = this;
+
+                axios.post('/game/message',{
+                    gameID: activeGameID.value,
+                    senderID: activePlayerID.value,
+                    recipientID: messageRecipientID.value,
+                    messageBody: messageBody.value
+                })
+                .then(function(response){
+                    messageBody.value = ""                   
+                });
+            }
             
+            function attack() {
+                let self = this;
+
+                axios.post('/game/attack',{
+                    gameID: activeGameID.value,
+                    attackerID: activePlayerID.value,
+                    playerToAttackID: playerToAttack.value,
+                    soldiersToCommit: soldiersToCommit.value
+                })
+                .then(function(response){
+                    alert(response.data.outcome)
+                    launchAttackVisible.value = false                  
+                });
+            }
+
             function getGameStatus() {
                 let self = this;
 
                 axios.get('/game/' + activeGameID.value + '/' + activePlayerID.value + '/status')
                 .then(function(response){
                     player.value = response.data.player
-                    people.value = response.data.people
+                    gameObjects.value = _.orderBy(response.data.gameObjects,['category','type'],['asc','asc']);
+                    gameObjectTallies.value = _.orderBy(response.data.gameObjectTallies,['type'],['asc']);
                     otherPlayers.value = response.data.otherPlayers
-                    gameObjects.value = response.data.gameObjects
                 });
             }
 
@@ -119,44 +260,55 @@
                 activeGameID,
                 activePlayerID,
                 openGames,
+                gameObjectLibrary,
                 player,
-                people,
-                otherPlayers,
                 gameObjects,
+                gameObjectTallies,
+                otherPlayers,
+                playerToAttack,
+                soldiersToCommit,
+                messageRecipientID,
+                messageRecipientName,
+                messageBody,
+                mode,
                 btnCreateGame,
                 joinGame,
                 getGameStatus,
-                getTileColor
+                getTileColor,
+                buyItem,
+                sendMessage,
+                attack
             };
         },
         computed: {
             gameList() {
                 return this.openGames;
             },
-            peopleList() {
-                return this.people;
+            buildings() {
+                return this.gameObjectTallies.filter((item) => {return item.category == "BUILDING"})
             }
-            
         },
         mounted: function() {
             let self = this;
 
             axios.get('/game/games')
-            .then(function(response) {
-                console.log(response)
+            .then((response) => {
                 if (response.data.games !== null) {
-                    self.openGames.value = response.data.games
+                    this.openGames = response.data.games
                 }
                 
             })
 
-            
+            axios.get('/game/gameObjectLibrary')
+            .then((response) => {
+                this.gameObjectLibrary = response.data.gameObjectLibrary
+            })
         }
     }).mount('#app')
     </script>
 
     <!-- Option 1: Bootstrap Bundle with Popper -->
-    <script src="/static/bootstrap-5.0.2-dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+    <script src="/static/bootstrap-5.3.0-dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 
   </body>
 </html>

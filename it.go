@@ -39,11 +39,6 @@ type Sql struct {
 // this map stores the users sessions. For larger scale applications, you can use a database or cache for this purpose
 var sessions = map[string]session{}
 
-// we'll use this method later to determine if the session has expired
-func (s session) isExpired() bool {
-	return s.expiry.Before(time.Now())
-}
-
 func getRoot(w http.ResponseWriter, r *http.Request) {
 
 	file, err := os.Open("static/login.html")
@@ -309,13 +304,17 @@ func main() {
 	r.Post("/game/join", gameServer.JoinGameHandler)
 	r.Get("/game/games", gameServer.GetGamesHandler)
 	r.Get("/game/{gameID}/{playerID}/status", gameServer.GetGameStatusHandler)
+	r.Post("/game/buy", gameServer.BuyHandler)
+	r.Post("/game/attack", gameServer.AttackHandler)
+	r.Get("/game/gameObjectLibrary", gameServer.GetGameObjectLibraryHandler)
+	r.Post("/game/message", gameServer.SendMessageHandler)
 
 	r.Post("/refresh", Refresh)
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
 	fmt.Printf("IT is running at localhost:%d\n", port)
-	err = http.ListenAndServe("localhost:"+strconv.Itoa(port), r)
+	err = http.ListenAndServe(":"+strconv.Itoa(port), r)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 
@@ -16,11 +17,17 @@ import (
 type GameServer struct {
 	Games []*Game
 
-	createGameCommandChannel chan CreateGameRequest
-	joinGameCommandChannel   chan JoinGameRequest
-	getGamesRequestChannel   chan GetGamesRequest
-	getGameStatusChannel     chan GetGameStatusRequest
-	buyRequestChannel        chan BuyRequest
+	createGameCommandChannel           chan CreateGameRequest
+	joinGameCommandChannel             chan JoinGameRequest
+	getGamesRequestChannel             chan GetGamesRequest
+	getGameStatusChannel               chan GetGameStatusRequest
+	buyRequestChannel                  chan BuyRequest
+	attackRequestChannel               chan AttackRequest
+	getGameObjectLibraryRequestChannel chan GameObjectLibraryRequest
+	sendMessageChannel                 chan SendMessageRequest
+
+	gameObjectLibrary []GameObject
+	GameObjectTypes   map[string]interface{}
 }
 
 type CreateGameRequest struct {
@@ -43,6 +50,8 @@ type JoinGameResponse struct {
 }
 
 type BuyRequest struct {
+	GameID    string `json:"gameID"`
+	PlayerID  string `json:"playerID"`
 	ItemName  string `json:"itemName"`
 	Quantity  int    `json:"quantity"`
 	ReplyChan chan BuyResponse
@@ -52,10 +61,42 @@ type BuyResponse struct {
 	Success bool `json:"success"`
 }
 
+type SendMessageRequest struct {
+	GameID      string `json:"gameID"`
+	SenderID    string `json:"senderID"`
+	RecipientID string `json:"recipientID"`
+	MessageBody string `json:"messageBody"`
+	ReplyChan   chan SendMessageResponse
+}
+
+type SendMessageResponse struct {
+	Success bool `json:"success"`
+}
+
+type AttackRequest struct {
+	GameID           string `json:"gameID"`
+	AttackerID       string `json:"attackerID"`
+	PlayerToAttackID string `json:"playerToAttackID"`
+	SoldiersToCommit int    `json:"soldiersToCommit"`
+	ReplyChan        chan AttackResponse
+}
+
+type AttackResponse struct {
+	Outcome string `json:"outcome"`
+}
+
 type GameListItemResponse struct {
 	GameID         string `json:"gameID"`
 	GameName       string `json:"gameName"`
 	HostPlayerName string `json:"hostPlayerName"`
+}
+
+type GameObjectLibraryRequest struct {
+	ReplyChan chan GameObjectLibraryResponse
+}
+
+type GameObjectLibraryResponse struct {
+	GameObjectLibrary []GameObject `json:"gameObjectLibrary"`
 }
 
 type GetGameStatusRequest struct {
@@ -64,11 +105,23 @@ type GetGameStatusRequest struct {
 	ReplyChan chan GameStatusResponse
 }
 
+type GameStatusPlayer struct {
+	PlayerID   string `json:"playerID"`
+	PlayerName string `json:"playerName"`
+}
+
+type GameObjectTally struct {
+	Category string `json:"category"`
+	Type     string `json:"type"`
+	Quantity int    `json:"quantity"`
+}
+
 type GameStatusResponse struct {
-	Player       *Player       `json:"player"`
-	OtherPlayers []string      `json:"otherPlayers"`
-	People       []*Person     `json:"people"`
-	GameObjects  []*GameObject `json:"gameObjects"`
+	Player       *Player             `json:"player"`
+	OtherPlayers []*GameStatusPlayer `json:"otherPlayers"`
+
+	GameObjects     []GameObject       `json:"gameObjects"`
+	GameObjectTally []*GameObjectTally `json:"gameObjectTallies"`
 }
 
 type GetGamesResponse struct {
@@ -85,6 +138,27 @@ func NewGameServer() *GameServer {
 	server.getGamesRequestChannel = make(chan GetGamesRequest)
 	server.getGameStatusChannel = make(chan GetGameStatusRequest)
 	server.buyRequestChannel = make(chan BuyRequest)
+	server.attackRequestChannel = make(chan AttackRequest)
+	server.getGameObjectLibraryRequestChannel = make(chan GameObjectLibraryRequest)
+	server.sendMessageChannel = make(chan SendMessageRequest)
+
+	server.GameObjectTypes = make(map[string]interface{})
+	server.GameObjectTypes["Woodcutter"] = NewWoodCutter
+	server.GameObjectTypes["FoodCollector"] = NewFoodCollector
+	server.GameObjectTypes["Soldier"] = NewSoldier
+	server.GameObjectTypes["Miner"] = NewMiner
+	server.GameObjectTypes["Barracks"] = NewBarracks
+	server.GameObjectTypes["Secateurs"] = NewSecateurs
+	server.GameObjectTypes["Blacksmith"] = NewBlacksmith
+	server.GameObjectTypes["TownCentre"] = NewTownCentre
+	server.GameObjectTypes["Builder"] = NewBuilder
+
+	for _, v := range server.GameObjectTypes {
+		f := reflect.ValueOf(v)
+		retVal := f.Call([]reflect.Value{})
+		retInterface := retVal[0].Interface().(GameObject)
+		server.gameObjectLibrary = append(server.gameObjectLibrary, GameObject(retInterface))
+	}
 
 	return server
 }
@@ -100,7 +174,7 @@ func (server *GameServer) Run() {
 
 		select {
 		case createGameRequest := <-server.createGameCommandChannel:
-			g := NewGame(createGameRequest.PlayerName)
+			g := NewGame(server, createGameRequest.PlayerName)
 			server.Games = append(server.Games, g)
 			createGameResponse := GameListItemResponse{GameID: g.GameID, GameName: g.GameName, HostPlayerName: g.HostPlayerName}
 			createGameRequest.ReplyChan <- createGameResponse
@@ -132,23 +206,46 @@ func (server *GameServer) Run() {
 			if game != nil {
 				thisPlayer := game.GetPlayerByID(getGameStatusRequest.PlayerID)
 
-				var playerNames []string
+				var otherPlayers []*GameStatusPlayer
 				g := server.GetGameByID(getGameStatusRequest.GameID)
 				for _, player := range g.Players {
-					playerNames = append(playerNames, player.Name)
+					if player.PlayerID != thisPlayer.PlayerID {
+						playerToAdd := &GameStatusPlayer{PlayerID: player.PlayerID, PlayerName: player.Name}
+						otherPlayers = append(otherPlayers, playerToAdd)
+					}
 				}
 
-				gameStatusResponse = GameStatusResponse{Player: thisPlayer, OtherPlayers: playerNames, People: thisPlayer.People, GameObjects: g.Map.GetNonBlankTiles()}
+				gameStatusResponse = GameStatusResponse{Player: thisPlayer, OtherPlayers: otherPlayers, GameObjects: thisPlayer.GameObjects, GameObjectTally: thisPlayer.GetGameObjectTally()}
 			} else {
-				gameStatusResponse = GameStatusResponse{Player: nil, OtherPlayers: nil, People: nil, GameObjects: nil}
+				gameStatusResponse = GameStatusResponse{Player: nil, OtherPlayers: nil, GameObjects: nil, GameObjectTally: nil}
 
 			}
 			getGameStatusRequest.ReplyChan <- gameStatusResponse
+		case sendMessageRequest := <-server.sendMessageChannel:
+			game := server.GetGameByID(sendMessageRequest.GameID)
+			senderPlayer := game.GetPlayerByID(sendMessageRequest.SenderID)
+			recipientPlayer := game.GetPlayerByID(sendMessageRequest.RecipientID)
+			senderPlayer.SendMessage(recipientPlayer, sendMessageRequest.MessageBody)
+			sendMessageResponse := SendMessageResponse{Success: true}
+			sendMessageRequest.ReplyChan <- sendMessageResponse
 		case buyRequest := <-server.buyRequestChannel:
 			// Purchase item.
-			//player.Buy(buyRequest.ItemName, buyRequest.Quantity)
-			buyResponse := BuyResponse{Success: true}
+			game := server.GetGameByID(buyRequest.GameID)
+			thisPlayer := game.GetPlayerByID(buyRequest.PlayerID)
+			success := thisPlayer.Buy(buyRequest.ItemName, buyRequest.Quantity)
+			buyResponse := BuyResponse{Success: success}
 			buyRequest.ReplyChan <- buyResponse
+		case attackRequest := <-server.attackRequestChannel:
+			// Attack.
+			game := server.GetGameByID(attackRequest.GameID)
+			attacker := game.GetPlayerByID(attackRequest.AttackerID)
+			target := game.GetPlayerByID(attackRequest.PlayerToAttackID)
+			outcome := attacker.Attack(target, attackRequest.SoldiersToCommit)
+			attackResponse := AttackResponse{Outcome: outcome}
+			attackRequest.ReplyChan <- attackResponse
+		case gameObjectLibraryRequest := <-server.getGameObjectLibraryRequestChannel:
+			response := GameObjectLibraryResponse{GameObjectLibrary: server.gameObjectLibrary}
+			gameObjectLibraryRequest.ReplyChan <- response
 		default: // do nothing
 		}
 
@@ -238,7 +335,7 @@ func (server *GameServer) GetGameStatusHandler(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(string(responseJSON))
+	//fmt.Println(string(responseJSON))
 	w.Write(responseJSON)
 }
 
@@ -251,4 +348,66 @@ func (server *GameServer) BuyHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
+	buyRequest.ReplyChan = make(chan BuyResponse)
+	server.buyRequestChannel <- buyRequest
+	buyResponse := <-buyRequest.ReplyChan
+	responseJSON, err := json.Marshal(buyResponse)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(responseJSON))
+	w.Write(responseJSON)
+}
+
+func (server *GameServer) AttackHandler(w http.ResponseWriter, r *http.Request) {
+	var attackRequest AttackRequest
+	err := json.NewDecoder(r.Body).Decode(&attackRequest)
+	if err != nil {
+		// If the structure of the body is wrong, return an HTTP error
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Println(err)
+		return
+	}
+	attackRequest.ReplyChan = make(chan AttackResponse)
+	server.attackRequestChannel <- attackRequest
+	buyResponse := <-attackRequest.ReplyChan
+	responseJSON, err := json.Marshal(buyResponse)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(responseJSON))
+	w.Write(responseJSON)
+}
+
+func (server *GameServer) GetGameObjectLibraryHandler(w http.ResponseWriter, r *http.Request) {
+	var request GameObjectLibraryRequest
+	request.ReplyChan = make(chan GameObjectLibraryResponse)
+	server.getGameObjectLibraryRequestChannel <- request
+	response := <-request.ReplyChan
+	responseJSON, err := json.Marshal(response)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(responseJSON))
+	w.Write(responseJSON)
+}
+
+func (server *GameServer) SendMessageHandler(w http.ResponseWriter, r *http.Request) {
+	var request SendMessageRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		// If the structure of the body is wrong, return an HTTP error
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Println(err)
+		return
+	}
+	request.ReplyChan = make(chan SendMessageResponse)
+	server.sendMessageChannel <- request
+	sendMessageResponse := <-request.ReplyChan
+	responseJSON, err := json.Marshal(sendMessageResponse)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(responseJSON))
+	w.Write(responseJSON)
 }

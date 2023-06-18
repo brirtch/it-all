@@ -34,6 +34,11 @@ type session struct {
 	expiry   time.Time
 }
 
+// we'll use this method later to determine if the session has expired
+func (s session) isExpired() bool {
+	return s.expiry.Before(time.Now())
+}
+
 func Login(w http.ResponseWriter, r *http.Request) {
 	var creds Credentials
 	// Get the JSON body and decode into credentials
