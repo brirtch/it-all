@@ -18,6 +18,7 @@
     <style>
         body {font-family:'Yatra One'}
         #logo {font-size: 5rem; font-family: 'Yatra One', cursive;}
+        .location {border:silver 1px solid; margin: 1rem 1rem 1rem 1rem; padding: 1rem;border-radius:1rem;}
     </style>
   </head>
   <body>
@@ -29,37 +30,48 @@
         <div id="app">
             <div v-if="mode != 'game'">
                 <div id="logo">Hunger for Victory</div>
-                <div style="font-family:'Yatra One'">A real time strategy game with a focus on strategy</div>
+                <div style="font-family:'Yatra One'">Capture land, build an army, and fight for victory</div>
             </div>
-            <div id="welcome_screen" v-if="mode == 'welcome_screen'">
+            <div id="welcome_screen" v-if="mode == 'welcome_screen'" width="100%">
                 
+                <div class="d-grid gap-2 col-6 mx-auto">
+                    <div><button type="button" class="btn btn-primary btn-large" @click="mode = 'new_game'">Host Game</button></div>
+                    <div><button type="button" class="btn btn-secondary btn-large" @click="mode = 'join_game'">Join Game</button></div>
+                </div>
                 
-                <div><button type="button" class="btn btn-secondary" @click="mode = 'new_game'">New Game</button></div>
-                <div><button type="button" class="btn btn-secondary" @click="mode = 'join_game'">Join Game</button></div>
             </div>
 
             <div id="new_game" v-if="mode == 'new_game'">
                 <h1>Create New Game</h1>
-                Player Name: <input type="text" v-model="playerName">
-                <input type="button" value="Create Game" @click="btnCreateGame" class="btn btn-secondary"> 
-                <button @click="mode = 'welcome_screen'">Back to Main Menu</button>
+                <div class="mb-3">
+                    <label for="playerName" class="form-label">Player Name</label>
+                    <input type="text" id="playerName" v-model="playerName" class="form-control">
+                </div>
+                <div class="mb-3">
+                    <input type="button" value="Create Game" @click="btnCreateGame" class="btn btn-primary form-control"> 
+                </div>
+                
+                <button @click="mode = 'welcome_screen'" class="btn form-control btn-secondary">Back to Main Menu</button>
             </div>
 
             <div id="join_game" v-if="mode == 'join_game'">
                 <h1>Join Game</h1>
-                Player Name: <input type="text" v-model="playerName">
+                <div class="mb-3">
+                    <label for="playerName2" class="form-label">Player Name</label>
+                    <input type="text" id="playerName2" v-model="playerName" class="form-control">
+                </div>
                 <h1>Active games on this Server</h1>
                 <div v-for="game in gameList">
                     {{game.gameName}} ({{game.hostPlayerName}}) <button @click="joinGame(game.gameID)" class="btn btn-secondary">Join</button>
                 </div>
-                <button @click="mode = 'welcome_screen'">Back to Main Menu</button>
+                <button @click="mode = 'welcome_screen'" class="btn btn-secondary">Back to Main Menu</button>
             </div>
            
 
             <div id="game" v-if="mode == 'game'">
                 <div>
                     <div class="row">
-                        <div class="col-4">{{playerName}}</div>
+                        <div class="col-4">{{playerName}} ({{player.homeLocation}})</div>
                         <div class="col-8" style="text-align:right"> &nbsp;🥩 {{player.food}} <span style="font-family:'Noto Color Emoji'">🪵</span> {{player.wood}}&nbsp; 🥈 {{player.iron}}&nbsp; 🎖️ {{player.gold}}</div> 
                     </div>
                 </div>
@@ -98,31 +110,67 @@
                         </div>
                     </div>
                 </div>
-                
-                <div>
-                    <h2>Buildings</h2>
-                    <div v-for="building in buildings">
-                        {{building.type}} <span class="badge text-bg-secondary">{{building.quantity}}</span>
-                        <div v-for="gameObject in gameObjectLibrary">
-                            <div v-if="gameObject.buildAt == building.type">
-                                <a href="#" @click="buyItem(gameObject.type,1)">Buy {{gameObject.type}}</a> (<span v-if="gameObject.foodCost > 0">{{gameObject.foodCost}} 🥩</span><span v-if="gameObject.woodCost > 0">&nbsp;+{{gameObject.woodCost}} 🪵</span> <span v-if="gameObject.ironCost > 0"> {{gameObject.ironCost}} iron</span> <span v-if="gameObject.goldCost > 0">&nbsp;{{gameObject.goldCost}}</span>)
-                            </div>        
+
+                <div class="modal" tabindex="-1" id="transferModal">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h1>Transfer</h1>
+                            </div>
+                            <div class="modal-body">
+                                <div>
+                                    Source location: {{transferSourceLocation}}
+                                </div>
+                                <div>
+                                    Object type: {{transferObjectType}}
+                                </div>
+                                <div>
+                                    Target location:
+                                    <select v-model="transferTargetLocation">
+                                        <option v-for="location in player.exploredLocations" :value="location" :key="location">
+                                            {{location}}
+                                        </option>
+                                    </select>
+                                    Target: {{transferTargetLocation}}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button @click="transfer()" data-bs-dismiss="modal">Transfer</button>
+                            </div>
                         </div>
                         
                     </div>
-
-                    <h2>People</h2>
-                    <div v-for="tally in gameObjectTallies">
-                        <div v-if="tally.category != 'BUILDING'">
-                            {{tally.type}} <span class="badge text-bg-secondary">{{tally.quantity}}</span>
-
-                            <div v-for="gameObject in gameObjectLibrary">
-                                <div v-if="gameObject.buildAt == tally.type">
-                                    <a href="#" @click="buyItem(gameObject.type,1)">Buy {{gameObject.type}}</a> (<span v-if="gameObject.foodCost > 0">{{gameObject.foodCost}} 🥩</span><span v-if="gameObject.woodCost > 0">&nbsp;+{{gameObject.woodCost}} 🪵</span> <span v-if="gameObject.ironCost > 0"> {{gameObject.ironCost}} iron</span> <span v-if="gameObject.goldCost > 0">&nbsp;{{gameObject.goldCost}}</span>)
-                                </div>        
+                </div>
+                
+                <div>
+                    <div v-for="location in player.exploredLocations" class="location">
+                        <h1>{{location}}</h1>
+                        <h2>Buildings</h2>
+                        <div v-for="building in buildings">
+                            <div v-if="building.location == location">
+                                {{building.type}} <span class="badge text-bg-secondary">{{building.quantity}}</span>
+                                <div v-for="gameObject in gameObjectLibrary">
+                                    <div v-if="gameObject.buildAt == building.type">
+                                        <a href="#" @click="buyItem(gameObject.type,1,location)">Buy {{gameObject.type}}</a> (<span v-if="gameObject.foodCost > 0">{{gameObject.foodCost}} 🥩</span><span v-if="gameObject.woodCost > 0">&nbsp;+{{gameObject.woodCost}} 🪵</span> <span v-if="gameObject.ironCost > 0"> {{gameObject.ironCost}} iron</span> <span v-if="gameObject.goldCost > 0">&nbsp;{{gameObject.goldCost}}</span>)
+                                    </div>        
+                                </div>
+                            </div>
+                        </div>
+    
+                        <h2>People</h2>
+                        <div v-for="tally in gameObjectTallies">
+                            <div v-if="tally.category != 'BUILDING' && tally.location == location">
+                                {{tally.type}} <span class="badge text-bg-secondary">{{tally.quantity}}</span> <a href="#" @click="transferObjectType = tally.type;transferSourceLocation = location" data-bs-toggle="modal" data-bs-target="#transferModal">Move</a>
+    
+                                <div v-for="gameObject in gameObjectLibrary">
+                                    <div v-if="gameObject.buildAt == tally.type">
+                                        <a href="#" @click="buyItem(gameObject.type,1,location)">Buy {{gameObject.type}}</a> (<span v-if="gameObject.foodCost > 0">{{gameObject.foodCost}} 🥩</span><span v-if="gameObject.woodCost > 0">&nbsp;{{gameObject.woodCost}} 🪵</span> <span v-if="gameObject.ironCost > 0"> {{gameObject.ironCost}} iron</span> <span v-if="gameObject.goldCost > 0">&nbsp;{{gameObject.goldCost}}</span>)
+                                    </div>        
+                                </div>
                             </div>
                         </div>
                     </div>
+                    
                     
 
                     <h3>Other Players</h3>
@@ -166,6 +214,10 @@
             const messageRecipientName = Vue.ref("")
             const messageBody = Vue.ref("")
             const mode = Vue.ref("welcome_screen")
+            const transferObjectType = Vue.ref("")
+            const transferSourceLocation = Vue.ref("")
+            const transferTargetLocation = Vue.ref("")
+
         
 
             function btnCreateGame() {
@@ -190,14 +242,15 @@
                 });
             }
 
-            function buyItem(item,qty) {
+            function buyItem(item,qty,location) {
                 let self = this;
 
                 axios.post('/game/buy',{
                     gameID: activeGameID.value,
                     playerID: activePlayerID.value,
                     itemName: item,
-                    quantity: qty
+                    quantity: qty,
+                    location: location
                 })
                 .then(function(response){
                     var audio = new Audio('/static/game/sounds/select-sound-121244.mp3');
@@ -218,6 +271,21 @@
                 })
                 .then(function(response){
                     messageBody.value = ""                   
+                });
+            }
+
+            function transfer() {
+                let self = this;
+
+                axios.post('/game/transferObject',{
+                    gameID: activeGameID.value,
+                    playerID: activePlayerID.value,
+                    type: transferObjectType.value,
+                    sourceLocation: transferSourceLocation.value,
+                    targetLocation: transferTargetLocation.value
+                })
+                .then(function(response){
+                    launchAttackVisible.value = false                  
                 });
             }
             
@@ -248,13 +316,6 @@
                 });
             }
 
-            function getTileColor(tileChar) {
-                if(tileChar == "T") return "green"
-                if(tileChar == "S") return "gray"
-                if(tileChar == "B") return "red" // berry
-                return "white"
-            }
-
             return {
                 playerName,
                 activeGameID,
@@ -271,13 +332,16 @@
                 messageRecipientName,
                 messageBody,
                 mode,
+                transferObjectType,
+                transferSourceLocation,
+                transferTargetLocation,
                 btnCreateGame,
                 joinGame,
                 getGameStatus,
-                getTileColor,
                 buyItem,
                 sendMessage,
-                attack
+                attack,
+                transfer
             };
         },
         computed: {

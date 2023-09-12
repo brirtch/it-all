@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link href="/static/bootstrap-5.3.0-dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <title>Photos</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        img.thumbnail {
+			object-fit: cover;
+			width: 320px;
+			height: 320px;
+			margin: 2px 2px 2px 2px;
+        }
+        
+        #preview {
+            display:flex;
+            flex-direction: column;
+            position:fixed;
+            top:0;
+            left:0;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #previewHeader {
+            background-color: black;
+            padding: 0.5rem;
+        }
+
+        #previewImage {
+            width:100vw;
+            height:100vh;
+            object-fit: contain;
+        }
+    </style>
+  </head>
+  <body>
+
+    <div class="container">
+        <!-- Content here -->
+        
+
+        <div id="app">
+            <div v-for="year in photoYears">
+               <h1>{{year.year}}</h1>
+                <div v-for="month in year.months">
+                    <div v-for="day in month.days">
+                        <h2>{{day.day}} {{month.month}}</h2>
+                        <div v-for="photo in day.photos" style="display:inline-block">
+                            <a href="javascript:void(0)" @click="selectPhoto(photo)"><img :src="'/photos/thumbnail/'+photo" class="thumbnail"></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="previewVisible" id="preview">
+                <div id="previewHeader"><a href="javascript:void(0)" @click="previewVisible=false"><img src="/static/images/arrow-left-circle.svg"></a> <img src="/static/images/rotate-ccw.svg"><img src="/static/images/rotate-cw.svg">{{previewInfo}}</div>
+                <div style="flex: 1;justify-content: center;align-items: center;"><img :src="'/photos/'+previewPhotoID" id="previewImage"></div>
+            </div>
+        </div>
+    </div>
+      
+    
+
+    <script>
+    
+    const { createApp } = Vue
+    
+
+    const app = createApp({
+        setup() {
+            const photoYears = Vue.ref([]);
+            const previewVisible = Vue.ref(false);
+            const previewPhotoID = Vue.ref(0);
+            const previewInfo = Vue.ref([]);
+
+            function selectPhoto(photoID) {
+                this.previewVisible = true;
+                this.previewPhotoID = photoID;
+                axios.get('/photos/info/'+photoID)
+                .then((response) => {
+                    if (response.data !== null) {
+                        this.previewInfo = response.data
+                    }
+                    
+                });
+            }
+
+            return {
+                photoYears,
+                previewVisible,
+                previewPhotoID,
+                previewInfo,
+                selectPhoto
+            };
+        },
+        computed: {
+        },
+        mounted: function() {
+            let self = this;
+
+            axios.get('/photos/all')
+            .then((response) => {
+                if (response.data.years !== null) {
+                    this.photoYears = response.data.years
+                }
+                
+            })
+        }
+    });
+    app.mount('#app');
+    
+    </script>
+
+    <!-- Option 1: Bootstrap Bundle with Popper -->
+    <script src="/static/bootstrap-5.3.0-dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+
+  </body>
+</html>
+

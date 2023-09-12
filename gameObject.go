@@ -21,6 +21,7 @@ type BaseGameObject struct {
 	Emoji    string             `json:"emoji"`
 	Player   *Player            `json:"-"`
 	BuildAt  string             `json:"buildAt"`
+	Location string             `json:"location"`
 	FoodCost int
 	WoodCost int
 	IronCost int
@@ -38,6 +39,8 @@ type GameObject interface {
 	GetType() string
 	GetCategory() string
 	GetMaxItems() int
+	GetLocationName() string
+	SetLocation(locationName string)
 }
 
 func (gameObject *BaseGameObject) SetPlayer(p *Player) {
@@ -76,6 +79,14 @@ func (gameObject *BaseGameObject) GetMaxItems() int {
 	return gameObject.MaxItems
 }
 
+func (gameObject *BaseGameObject) GetLocationName() string {
+	return gameObject.Location
+}
+
+func (gameObject *BaseGameObject) SetLocation(locationName string) {
+	gameObject.Location = locationName
+}
+
 func (gameObject *BaseGameObject) MarshalJSON() ([]byte, error) {
 	m := make(map[string]string)
 	m["category"] = string(gameObject.Category)
@@ -85,6 +96,7 @@ func (gameObject *BaseGameObject) MarshalJSON() ([]byte, error) {
 	m["ironCost"] = fmt.Sprint(gameObject.GetIronCost())
 	m["buildAt"] = gameObject.BuildAt
 	m["maxItems"] = fmt.Sprint(gameObject.MaxItems)
+	m["location"] = gameObject.Location
 
 	return json.Marshal(m)
 }

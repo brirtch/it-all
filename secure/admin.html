@@ -19,12 +19,41 @@
                 Logged in as x
             </div>
             <div id="app">
-                <textarea id="input" v-model="input" class="form-control"></textarea>
-                <button @click="btnRunCommandClick" class="form-control">Run command</button>
-                <textarea id="output" v-model="output" class="form-control"></textarea>
+                <ul class="nav nav-tabs">
+                    <li class="nav-item">
+                        <a class="nav-link" v-bind:class="(activeTab == 'command'?'active':'')" aria-current="page" href="#" @click="activeTab = 'command'">Command</a>
+                      </li>
+                    <li class="nav-item">
+                      <a class="nav-link" v-bind:class="(activeTab == 'photos'?'active':'')" aria-current="page" href="#" @click="activeTab = 'photos'">Photos</a>
+                    </li>
+                    <li class="nav-item">
+                      <a class="nav-link" v-bind:class="(activeTab == 'pairing'?'active':'')" href="#" @click="activeTab = 'pairing'">Pairing</a>
+                    </li>
+                    <li class="nav-item">
+                      <a class="nav-link" v-bind:class="(activeTab == 'sql'?'active':'')" href="#" @click="activeTab = 'sql'">SQL</a>
+                    </li>
+                  </ul>
 
-                <div id="photos">
-                    <h2>Photo Settings</h2>
+                <div id="command" v-if="activeTab == 'command'">
+                    <label>Command:</label>
+                    <textarea id="input" v-model="input" class="form-control"></textarea>
+                    <button @click="btnRunCommandClick" class="form-control">Run command</button>
+                    <textarea id="output" v-model="output" class="form-control"></textarea>
+
+                    <p>
+                        Valid commands:
+                        <ul>
+                            <li>time - shows the current server time</li>
+                            <li>joke - shows a joke from the Joke API</li>
+                            <li>moon - gets information about the moon</li>
+                            <li>mac - gets mac address</li>
+                        </ul>
+                    </p>
+                </div>
+
+                
+
+                <div id="photos" v-if="activeTab == 'photos'">
                     <p>
                         Folders with photos. It will look for photos in these folders, and index these
                         photos in its database. Local folders can be watched for changes. Remote (e.g. UNC)
@@ -34,11 +63,18 @@
                     <input type="text" v-model="newPhotoFolder" class="form-control">
                     <button @click="btnAddPhotoFolderClick" class="form-control">Add folder</button>
 
-
+                    <h3>Photo Folders</h3>
+                    <table class="table">
+                        <tr>
+                            <div v-if="photoFolders.rows.length>0"><th v-for="(value,key) in photoFolders.rows[0]">{{key}}</th></div>
+                        </tr>
+                        <tr v-for="row in photoFolders.rows">
+                            <td v-for="(value,key) in row">{{value}}</td>
+                        </tr>
+                    </table>
                 </div>
 
-                <div>
-                    <h2>Pairing</h2>
+                <div id="pairing" v-if="activeTab == 'pairing'">
                     <h3>Pair with a friend</h3>
                     <p>
                         Your friend must have opened his/her node for pairing.
@@ -80,12 +116,19 @@
                         </tr>
                     </table>
 
-                    <h2>SQL</h2>
+                    
+                    
+                </div>
+                <div id="sql" v-if="activeTab == 'sql'">
+                    <label>SQL:</label>
                     <div>
                         <textarea v-model="sql" class="form-control"></textarea>
                     </div>
                     <div>
-                        <button @click="btnRunSql" class="form-control">Run</button>
+                        <button @click="btnRunSql" class="form-control btn btn-primary">Run</button>
+                    </div>
+                    <div>
+                        {{sqlResult.message}}
                     </div>
                     <div>
                         <table class="table">
@@ -97,17 +140,8 @@
                             </tr>
                         </table>
                     </div>
-
-                    <h2>Photo Folders</h2>
-                    <table class="table">
-                        <tr>
-                            <div v-if="photoFolders.rows.length>0"><th v-for="(value,key) in photoFolders.rows[0]">{{key}}</th></div>
-                        </tr>
-                        <tr v-for="row in photoFolders.rows">
-                            <td v-for="(value,key) in row">{{value}}</td>
-                        </tr>
-                    </table>
                 </div>
+
             </div>
             <script>
                 const { createApp } = Vue
@@ -123,7 +157,8 @@
                             sql: 'SELECT * FROM pair_request_opening',
                             sqlResult: {rows:[]},
                             newPhotoFolder: '',
-                            photoFolders: {rows:[]}
+                            photoFolders: {message:'',rows:[]},
+                            activeTab: 'command'
                         }
                     },
                     methods: {

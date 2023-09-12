@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,22 +21,60 @@ type PhotoFolderRequest struct {
 	Folder string `json:folder`
 }
 
+type PhotoResponse struct {
+	PhotoYears []*PhotoYear `json:"years"`
+}
+
+type PhotoYear struct {
+	Year   int           `json:"year"`
+	Months []*PhotoMonth `json:"months"`
+}
+
+type PhotoMonth struct {
+	Month string      `json:"month"`
+	Days  []*PhotoDay `json:"days"`
+}
+
+type PhotoDay struct {
+	Day    int   `json:"day"`
+	Photos []int `json:"photos"`
+}
+
+type PhotoInfoResponse struct {
+	Bytes    int    `json:"bytes"`
+	Filename string `json:"filename"`
+}
+
 // Creates a thumbnail of sourceFile (JPG only at the moment)
 // and returns the thumbnail path.
-func createThumbnail(sourceFile string) string {
+func createThumbnail(sourceFile string) (string, error) {
 	input, _ := os.Open(sourceFile)
 	defer input.Close()
 
-	filename := path.Base(sourceFile)
+	filename := filepath.Base(sourceFile)
 	destFile := "data" + string(os.PathSeparator) + filename + ".thumb.jpg"
 	output, _ := os.Create(destFile)
 	defer output.Close()
 
 	// Decode the image (from PNG to image.Image):
-	src, _ := jpeg.Decode(input)
+	src, err := jpeg.Decode(input)
+	if err != nil {
+		// Likely corrupt file. Flag it to be ignored.
+		return "", err
+	}
 
 	// Set the expected size that you want:
-	dst := image.NewRGBA(image.Rect(0, 0, src.Bounds().Max.X/2, src.Bounds().Max.Y/2))
+	//dst := image.NewRGBA(image.Rect(0, 0, src.Bounds().Max.X/2, src.Bounds().Max.Y/2))
+	landscape := src.Bounds().Max.X > src.Bounds().Max.Y
+	targetWidth := 600
+	targetHeight := 600
+	scaleRatio := 1.0
+	if landscape {
+		scaleRatio = float64(targetWidth) / float64(src.Bounds().Max.X)
+	} else {
+		scaleRatio = float64(targetHeight) / float64(src.Bounds().Max.Y)
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, int(float64(src.Bounds().Max.X)*scaleRatio), int(float64(src.Bounds().Max.Y)*scaleRatio)))
 
 	// Resize:
 	draw.NearestNeighbor.Scale(dst, dst.Rect, src, src.Bounds(), draw.Over, nil)
@@ -45,7 +82,7 @@ func createThumbnail(sourceFile string) string {
 	// Encode to `output`:
 	jpeg.Encode(output, dst, nil)
 
-	return destFile
+	return destFile, nil
 }
 
 func getDateTaken(fname string) time.Time {
@@ -118,7 +155,7 @@ func PhotoWatch() {
 						return err
 					}
 
-					if strings.ToLower(path.Ext(thePath)) == ".jpg" {
+					if strings.ToLower(filepath.Ext(thePath)) == ".jpg" {
 						// Check if this image already exists in the photo table. If so, ignore it.
 						existsSQL := `SELECT COUNT(*) AS photo_count FROM photo WHERE full_path = ?`
 						row := DB.QueryRow(existsSQL, thePath)
@@ -126,24 +163,27 @@ func PhotoWatch() {
 						row.Scan(&photoCount)
 
 						if photoCount == 0 {
-							createThumbnail(thePath)
-							dateTaken := getDateTaken(thePath)
-							fmt.Println(dateTaken)
-							pathElements := strings.Split(thePath, string(os.PathSeparator))
-							sql := `INSERT INTO photo(full_path,filename,bytes,parent_folder,date_taken) VALUES(?,?,?,?,?)`
+							thumbnailPath, err := createThumbnail(thePath)
+							if err == nil {
+								dateTaken := getDateTaken(thePath)
+								fmt.Println(dateTaken)
+								pathElements := strings.Split(thePath, string(os.PathSeparator))
+								sql := `INSERT INTO photo(full_path,filename,bytes,parent_folder,date_taken,thumbnail) VALUES(?,?,?,?,?,?)`
 
-							parentFolder := ""
-							if len(pathElements) > 2 {
-								parentFolder = pathElements[len(pathElements)-2]
-							} else {
-								parentFolder = ""
-							}
-							_, err = DB.Exec(sql, thePath, path.Base(thePath), info.Size(), parentFolder, dateTaken)
-							if err != nil {
-								log.Println(err)
+								parentFolder := ""
+								if len(pathElements) > 2 {
+									parentFolder = pathElements[len(pathElements)-2]
+								} else {
+									parentFolder = ""
+								}
+								_, err = DB.Exec(sql, thePath, filepath.Base(thePath), info.Size(), parentFolder, dateTaken, thumbnailPath)
+								if err != nil {
+									log.Println(err)
+								}
+
+								fmt.Println(thePath, info.Size())
 							}
 
-							fmt.Println(thePath, info.Size())
 						}
 					}
 
@@ -200,6 +240,48 @@ func AddPhotoFolder(folder string) {
 	}*/
 }
 
+// GET /photos/thumbnail/{id}
+func ThumbnailServeHandler(w http.ResponseWriter, r *http.Request) {
+	photoID := chi.URLParam(r, "photoID")
+
+	sql := `SELECT thumbnail FROM photo WHERE photo_id = ?`
+	row := DB.QueryRow(sql, photoID)
+
+	currentWorkingDirectory, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fullPath := ""
+	_ = row.Scan(&fullPath)
+	fullPath = currentWorkingDirectory + string(os.PathSeparator) + fullPath
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		// path/to/whatever does not exist
+		fmt.Println("Does not exist")
+	}
+	http.ServeFile(w, r, fullPath)
+}
+
+// GET /photos/info/{id}
+func PhotoInfoHandler(w http.ResponseWriter, r *http.Request) {
+	photoID := chi.URLParam(r, "photoID")
+
+	sql := `SELECT bytes,filename FROM photo WHERE photo_id = ?`
+	row := DB.QueryRow(sql, photoID)
+	var bytes int
+	var filename string
+	row.Scan(&bytes, &filename)
+
+	response := PhotoInfoResponse{Bytes: bytes, Filename: filename}
+
+	responseJSON, err := json.Marshal(response)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//fmt.Println(string(responseJSON))
+	w.Write(responseJSON)
+}
+
 // GET /photos
 func PhotosHandler(w http.ResponseWriter, r *http.Request) {
 	sql := `SELECT photo_id,full_path,filename,bytes,date_taken,parent_folder FROM photo ORDER BY parent_folder DESC,date_taken DESC`
@@ -232,9 +314,74 @@ func PhotosHandler(w http.ResponseWriter, r *http.Request) {
 		if lastParentFolder != parentFolder {
 			w.Write([]byte("<h1>" + parentFolder + "</h1>"))
 		}
-		w.Write([]byte(fmt.Sprintf("<a href=\"/photos/%d\"><img src=\"/photos/%d\" title=\"%s\"></a>", photoID, photoID, fullPath)))
+		w.Write([]byte(fmt.Sprintf("<a href=\"/photos/%d\"><img src=\"/photos/thumbnail/%d\" title=\"%s\"></a>", photoID, photoID, fullPath)))
 		w.Write([]byte("</body>"))
 
 		lastParentFolder = parentFolder
 	}
+}
+
+func monthNumberToName(month int) string {
+	return time.Month(month).String()
+}
+
+// GET /photos/all
+func GetAllPhotosHandler(w http.ResponseWriter, r *http.Request) {
+	sql := `SELECT strftime("%Y",date_taken) AS year,strftime("%m",date_taken) AS month, strftime("%d",date_taken) AS day,photo_id FROM photo ORDER BY date_taken DESC`
+	rows, err := DB.Query(sql)
+	if err != nil {
+		log.Println(err)
+	}
+
+	row := 0
+
+	photoID := 0
+	year := 0
+	month := 0
+	day := 0
+
+	lastYear := 0
+	lastMonth := 0
+	lastDay := 0
+
+	var currentPhotoYear *PhotoYear
+	photoYears := []*PhotoYear{}
+	photos := []int{}
+
+	for rows.Next() {
+		err := rows.Scan(&year, &month, &day, &photoID)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		photos = append(photos, photoID)
+		if lastYear != year {
+			photoYear := &PhotoYear{Year: year, Months: []*PhotoMonth{}}
+			photoYears = append(photoYears, photoYear)
+			currentPhotoYear = photoYears[len(photoYears)-1]
+		}
+		if lastMonth != month || lastYear != year {
+			photoMonth := &PhotoMonth{Month: monthNumberToName(month), Days: []*PhotoDay{}}
+			currentPhotoYear.Months = append(currentPhotoYear.Months, photoMonth)
+		}
+		if lastDay != day || lastMonth != month || lastYear != year {
+			photoDay := &PhotoDay{Day: day, Photos: photos}
+			currentPhotoYear.Months[len(currentPhotoYear.Months)-1].Days = append(currentPhotoYear.Months[len(currentPhotoYear.Months)-1].Days, photoDay)
+			photos = []int{}
+		}
+
+		lastYear = year
+		lastMonth = month
+		lastDay = day
+
+		row++
+	}
+	response := PhotoResponse{PhotoYears: photoYears}
+
+	responseJSON, err := json.Marshal(response)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//fmt.Println(string(responseJSON))
+	w.Write(responseJSON)
 }

@@ -9,14 +9,17 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
+	MoonPhase "github.com/janczer/goMoonPhase"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/icelain/jokeapi"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -141,7 +144,10 @@ func PostSql(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("This would run SQL: " + sql.Sql)
 
 	rows, err := DB.Query(sql.Sql)
-	defer rows.Close()
+	if err == nil {
+		defer rows.Close()
+	}
+
 	message := ""
 	rowJSON := ""
 	headerJSON := ""
@@ -157,7 +163,6 @@ func PostSql(w http.ResponseWriter, r *http.Request) {
 
 		var columns []Column
 		for _, col := range cols {
-			print("Column: " + col.Name())
 			columns = append(columns, Column{Name: col.Name()})
 		}
 
@@ -176,7 +181,13 @@ func PostSql(w http.ResponseWriter, r *http.Request) {
 
 	encodedMessage := new(strings.Builder)
 	json.NewEncoder(encodedMessage).Encode(message)
-	jsonResponse := []byte(fmt.Sprintf(`{"message":%s,"headers":%s,"rows":%s}`, encodedMessage.String(), headerJSON, rowJSON))
+	var jsonResponse []byte
+	if len(headerJSON) == 0 {
+		jsonResponse = []byte(fmt.Sprintf(`{"message":%s,"headers":[],"rows":[]}`, encodedMessage.String()))
+	} else {
+		jsonResponse = []byte(fmt.Sprintf(`{"message":%s,"headers":%s,"rows":%s}`, encodedMessage.String(), headerJSON, rowJSON))
+	}
+
 	w.Write(jsonResponse)
 }
 
@@ -189,6 +200,21 @@ func Admin(w http.ResponseWriter, r *http.Request) {
 		w.Write(fileContents)
 	}
 
+}
+
+func getMacAddr() ([]string, error) {
+	ifas, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var as []string
+	for _, ifa := range ifas {
+		a := ifa.HardwareAddr.String()
+		if a != "" {
+			as = append(as, a)
+		}
+	}
+	return as, nil
 }
 
 func postCommand(w http.ResponseWriter, r *http.Request) {
@@ -211,6 +237,25 @@ func postCommand(w http.ResponseWriter, r *http.Request) {
 	} else if commandPieces[0] == "add-photo-folder" {
 		folderToAdd := commandPieces[1]
 		AddPhotoFolder(folderToAdd)
+	} else if commandPieces[0] == "joke" {
+		api := jokeapi.New()
+		response, err := api.Fetch()
+		if err != nil {
+			log.Fatal(err)
+		}
+		io.WriteString(w, response.Joke[0]+response.Joke[1])
+	} else if commandPieces[0] == "moon" {
+		t := time.Now()
+		m := MoonPhase.New(t)
+		io.WriteString(w, fmt.Sprintf("Phase name: %s\nIt is %.2f km from the centre of the Earth", m.PhaseName(), m.Distance()))
+	} else if commandPieces[0] == "mac" {
+		as, err := getMacAddr()
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, a := range as {
+			io.WriteString(w, a)
+		}
 	} else {
 		io.WriteString(w, "You said: "+cmd.Command+"\n")
 	}
@@ -229,8 +274,9 @@ func dbInit() {
 
 	var sqlStatements []string
 	sqlStatements = append(sqlStatements, `CREATE TABLE pair_request_opening (url text, created, expires, key);`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE content(slug,title,html);`)
 	sqlStatements = append(sqlStatements, `CREATE TABLE photo_folder(folder TEXT, date_added DATETIME, date_last_scanned DATETIME, photo_count INT, state TEXT);`)
-	sqlStatements = append(sqlStatements, `CREATE TABLE photo(photo_id INTEGER PRIMARY KEY,full_path TEXT,filename TEXT,bytes INT,parent_folder TEXT,date_taken DATETIME)`)
+	sqlStatements = append(sqlStatements, `CREATE TABLE photo(photo_id INTEGER PRIMARY KEY,full_path TEXT,filename TEXT,bytes INT,parent_folder TEXT,date_taken DATETIME,thumbnail TEXT)`)
 	sqlStatements = append(sqlStatements, `CREATE TABLE game(game_id INTEGER PRIMARY KEY, game_name TEXT,map_width INT,map_height INT)`)
 	sqlStatements = append(sqlStatements, `CREATE TABLE player(player_id INTEGER PRIMARY KEY,player_name,game_id INT REFERENCES game(game_id),food INT,wood INT)`)
 	sqlStatements = append(sqlStatements, `CREATE TABLE person(person_id INTEGER PRIMARY KEY,player_id INT REFERENCES player(player_id),role TEXT,gender TEXT,health INT)`)
@@ -286,7 +332,10 @@ func main() {
 	r.Route("/photos", func(r chi.Router) {
 		r.Get("/", PhotosHandler)
 		r.Get("/{photoID}", ImageServeHandler)
+		r.Get("/thumbnail/{photoID}", ThumbnailServeHandler)
+		r.Get("/info/{photoID}", PhotoInfoHandler)
 		r.Post("/folders", NewPhotoFolderHandler)
+		r.Get("/all/", GetAllPhotosHandler)
 	})
 
 	r.Route("/admin", func(r chi.Router) {
@@ -308,6 +357,7 @@ func main() {
 	r.Post("/game/attack", gameServer.AttackHandler)
 	r.Get("/game/gameObjectLibrary", gameServer.GetGameObjectLibraryHandler)
 	r.Post("/game/message", gameServer.SendMessageHandler)
+	r.Post("/game/transferObject", gameServer.TransferObjectHandler)
 
 	r.Post("/refresh", Refresh)
 	fs := http.FileServer(http.Dir("static"))

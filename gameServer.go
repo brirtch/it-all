@@ -25,6 +25,7 @@ type GameServer struct {
 	attackRequestChannel               chan AttackRequest
 	getGameObjectLibraryRequestChannel chan GameObjectLibraryRequest
 	sendMessageChannel                 chan SendMessageRequest
+	transferObjectRequestChannel       chan TransferObjectRequest
 
 	gameObjectLibrary []GameObject
 	GameObjectTypes   map[string]interface{}
@@ -52,6 +53,7 @@ type JoinGameResponse struct {
 type BuyRequest struct {
 	GameID    string `json:"gameID"`
 	PlayerID  string `json:"playerID"`
+	Location  string `json:"location"`
 	ItemName  string `json:"itemName"`
 	Quantity  int    `json:"quantity"`
 	ReplyChan chan BuyResponse
@@ -111,6 +113,7 @@ type GameStatusPlayer struct {
 }
 
 type GameObjectTally struct {
+	Location string `json:"location"`
 	Category string `json:"category"`
 	Type     string `json:"type"`
 	Quantity int    `json:"quantity"`
@@ -128,6 +131,19 @@ type GetGamesResponse struct {
 	Games []GameListItemResponse `json:"games"`
 }
 
+type TransferObjectRequest struct {
+	GameID         string `json:"gameID"`
+	PlayerID       string `json:"playerID"`
+	ObjectType     string `json:"type"`
+	SourceLocation string `json:"sourceLocation"`
+	TargetLocation string `json:"targetLocation"`
+	ReplyChan      chan TransferObjectResponse
+}
+
+type TransferObjectResponse struct {
+	Success bool `json:"success"`
+}
+
 // Create a new GameServer.
 func NewGameServer() *GameServer {
 	server := &GameServer{getGamesRequestChannel: make(chan GetGamesRequest)}
@@ -141,6 +157,7 @@ func NewGameServer() *GameServer {
 	server.attackRequestChannel = make(chan AttackRequest)
 	server.getGameObjectLibraryRequestChannel = make(chan GameObjectLibraryRequest)
 	server.sendMessageChannel = make(chan SendMessageRequest)
+	server.transferObjectRequestChannel = make(chan TransferObjectRequest)
 
 	server.GameObjectTypes = make(map[string]interface{})
 	server.GameObjectTypes["Woodcutter"] = NewWoodCutter
@@ -152,6 +169,7 @@ func NewGameServer() *GameServer {
 	server.GameObjectTypes["Blacksmith"] = NewBlacksmith
 	server.GameObjectTypes["TownCentre"] = NewTownCentre
 	server.GameObjectTypes["Builder"] = NewBuilder
+	server.GameObjectTypes["Scout"] = NewScout
 
 	for _, v := range server.GameObjectTypes {
 		f := reflect.ValueOf(v)
@@ -232,7 +250,7 @@ func (server *GameServer) Run() {
 			// Purchase item.
 			game := server.GetGameByID(buyRequest.GameID)
 			thisPlayer := game.GetPlayerByID(buyRequest.PlayerID)
-			success := thisPlayer.Buy(buyRequest.ItemName, buyRequest.Quantity)
+			success := thisPlayer.Buy(buyRequest.ItemName, buyRequest.Quantity, buyRequest.Location)
 			buyResponse := BuyResponse{Success: success}
 			buyRequest.ReplyChan <- buyResponse
 		case attackRequest := <-server.attackRequestChannel:
@@ -246,6 +264,12 @@ func (server *GameServer) Run() {
 		case gameObjectLibraryRequest := <-server.getGameObjectLibraryRequestChannel:
 			response := GameObjectLibraryResponse{GameObjectLibrary: server.gameObjectLibrary}
 			gameObjectLibraryRequest.ReplyChan <- response
+		case transferObjectRequest := <-server.transferObjectRequestChannel:
+			game := server.GetGameByID(transferObjectRequest.GameID)
+			thisPlayer := game.GetPlayerByID(transferObjectRequest.PlayerID)
+			thisPlayer.TransferObject(transferObjectRequest.ObjectType, transferObjectRequest.SourceLocation, transferObjectRequest.TargetLocation)
+			transferResponse := TransferObjectResponse{Success: true}
+			transferObjectRequest.ReplyChan <- transferResponse
 		default: // do nothing
 		}
 
@@ -403,6 +427,26 @@ func (server *GameServer) SendMessageHandler(w http.ResponseWriter, r *http.Requ
 	}
 	request.ReplyChan = make(chan SendMessageResponse)
 	server.sendMessageChannel <- request
+	sendMessageResponse := <-request.ReplyChan
+	responseJSON, err := json.Marshal(sendMessageResponse)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(responseJSON))
+	w.Write(responseJSON)
+}
+
+func (server *GameServer) TransferObjectHandler(w http.ResponseWriter, r *http.Request) {
+	var request TransferObjectRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		// If the structure of the body is wrong, return an HTTP error
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Println(err)
+		return
+	}
+	request.ReplyChan = make(chan TransferObjectResponse)
+	server.transferObjectRequestChannel <- request
 	sendMessageResponse := <-request.ReplyChan
 	responseJSON, err := json.Marshal(sendMessageResponse)
 	if err != nil {
